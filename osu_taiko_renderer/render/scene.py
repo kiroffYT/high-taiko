@@ -1000,6 +1000,18 @@ class TaikoSim:
             if end_v <= 0.02 and end_t < last_obj - 3000:
                 self.failed = True
                 self.fail_time_ms = end_t
+        elif not no_fail:
+            # No life-bar graph (lazer/API .osr omit it): the scan above finds
+            # nothing even on a genuine fail. Fall back to the last replay-frame
+            # time — a fail/quit stops recording early, landing well before the
+            # last object, while a PASS plays to the end (last frame ~ last_obj),
+            # so the `< last_obj - 3000` guard makes this a no-op on passes.
+            # Frames share the object map-time axis (rate applies only to the
+            # output video), so DT/HT passes stay safe. NoFail excluded above.
+            rend = int(getattr(m, "replay_end_ms", 0) or 0)
+            if 0 < rend < last_obj - 3000:
+                self.failed = True
+                self.fail_time_ms = rend
         # Taiko HP accumulates from empty (lazer AccumulatingHealthProcessor):
         # the synthesized model legitimately starts at 0 and climbs, so there is
         # no "false death" low patch to floor against (unlike the old std-like
