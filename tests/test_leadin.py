@@ -24,7 +24,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from osu_taiko_renderer.replay import _recover_leadin_offset, parse_replay
+from osu_taiko_renderer.beatmap.replay import _recover_leadin_offset, parse_replay
 
 HERE = Path(__file__).resolve().parent
 STABLE_LEADIN = HERE / "stable_leadin.osr"     # real corpus replay, 16863ms intro-skip
