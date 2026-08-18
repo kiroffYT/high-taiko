@@ -1,95 +1,107 @@
-# osu-taiko-renderer
+# high-taiko
 
-An in-house osu!taiko replay → MP4 renderer. Parses a `.osr` replay against its beatmap, simulates and judges the play, then draws the right-to-left scrolling taiko playfield frame-by-frame and encodes it to video with ffmpeg.
+REDAME for other languages:
 
-## Part of the R3D Renderer
+<table>
+  <tr><td><a href="https://github.com/kiroffYT/high-taiko/blob/main/README_en.md">🇺🇸 English</a></td><td><a href="https://github.com/kiroffYT/high-taiko/blob/main/README_es.md">🇪🇸 Spain</a></td></tr>
+</table>
 
-This is the **taiko engine** for [R3D Renderer](https://renderer.r3dwolfie.com), a self-hosted osu! replay→MP4 service (Discord bot + website, package `mania_ordr`) that dispatches each render to a per-mode engine repo. The core launches this engine as a fresh subprocess per render, so an edit-in-place deploys on the next render with no service restart. In production this engine runs on the **catch** engine's Python venv (shared interpreter; the code is its own repo).
+Собственный рендерер реплеев osu!taiko в видео MP4 (форк **osu-taiko-renderer**). Разбирает файлы реплеев `.osr`, симулирует и оценивает прохождение карт, отрисовывает игровое поле с движущимися справа налево нотами покадрово и кодирует итоговый результат в видео через ffmpeg.
 
-> Note: parts of this repo were forked from the catch renderer — some module docstrings (e.g. `osu_taiko_renderer/__init__.py`, `render/gl.py`) still say "catch". The runtime code is taiko-specific. (verify: docstrings may be cleaned up later.)
+> **Особенность форка**: если путь к папке карты (`BEATMAP_DIR`) не указан, **high-taiko** автоматически скачивает нужную карту через API **osu.direct**, используя MD5-хэш из файла реплея.
 
-## What it renders / fidelity
+## Часть R3D Renderer
 
-- **Taiko objects**: don (red centre), kat (blue rim), big/finish notes (both keys), drumrolls (+ ticks), and swells/denden (alternating-hit shakers). Four inputs are modelled: centre-left/right and rim-left/right.
-- **Faithful in-order sim + judgment** (`render/scene.py`): each key-press consumes the frontmost still-hittable same-colour note inside the OD hit window (notelock, no press-stealing); a note whose window passes unhit is a MISS. This lands combo breaks on the notes the player actually missed.
-- **Header reconcile** (`beatmap/score_fidelity.py`): the `.osr` header stays the count-authority — a reconcile pass snaps GREAT/OK/MISS totals and max-combo to the header, so counts/accuracy/score are header-exact while *which* notes broke combo is corrected from the sim.
-- **Argon (lazer) HUD** by default (`argon/` — compositor, HUD, counters, procedural glyphs). No osu! game assets are bundled; skinless output uses procedurally-generated Argon art and the bundled Nunito font. A user skin can be supplied via `--skin`.
-- **pp / SR**: live pp counter and star rating estimated via `rosu_pp_py`; `--pp` / `--sr` pin the results card (and pp-counter endpoint) to osu!'s official values while keeping the live curve's rosu shape.
-- **Storyboards**: optional in-house storyboard engine (`--storyboard`, default off; parity with the std engine). When off, output is byte-identical to before.
-- **Extras**: results-screen outro with a per-map render leaderboard (local render DB, or osu! global top scores via `--leaderboard-source osu`), background dim/blur, break letterboxing, beatmap/miss/nightcore hitsounds, watermark, and a per-frame score sidecar (`--score-json`) for the live-overlay compositor.
+Это **движок taiko** для [R3D Renderer](https://renderer.r3dwolfie.com) — сервиса конвертации реплеев osu! в MP4 (Discord-бот и веб-сайт, пакет `mania_ordr`), который отправляет каждый рендер отдельному движку для соответствующего режима игры. Ядро запускает данный движок как отдельный процесс под каждую задачу, поэтому изменения в коде подтягиваются сразу на следующий рендер без перезапуска сервиса. В продакшене этот движок работает в виртуальном окружении Python от движка **catch** (общее окружение, но код находится в собственном репозитории).
 
-## Usage
+> Примечание: часть кода репозитория изначально была взята из catch-рендерера — в докстрингах некоторых модулей (например, `osu_taiko_renderer/__init__.py`, `render/gl.py`) всё ещё может упоминаться «catch». Сам исполняемый код предназначен именно для режима taiko.
 
-Invoked as a module:
+## Четкость и физика рендеринга
+
+* **Объекты Taiko**: доны (красный центр), каты (синий край), большие ноты (финишеры для обоих типов), барабанные дроби (с тиками) и гейши/сквоши (Swell/Denden, требующие чередования нажатий). Моделируются четыре клавиши: центр-лево/право и край-лево/право.
+* **Точная симуляция и судейство** (`render/scene.py`): каждое нажатие обрабатывает ближайшую ещё не нажатую ноту соответствующего цвета в пределах временного окна OD (без перехвата нажатий и с поддержкой notelock); если нота выходит за пределы окна, засчитывается MISS. Это позволяет точно определить ноты, на которых игрок реально потерял комбо.
+* **Согласование с заголовком** (`beatmap/score_fidelity.py`): заголовок `.osr` остается главным источником статистики — отдельный этап сверки приводит итоговые GREAT/OK/MISS и максимальное комбо к значениям из заголовка. Таким образом, точность, счёт и количество 300/100/miss всегда точно совпадают с оригиналом, а симуляция определяет, *какие именно* ноты сбили комбо.
+* **Интерфейс Argon (lazer) по умолчанию** (`argon/` — композитинг, HUD, счётчики, процедурные глифы). Ресурсы из osu! не вшиты; вариант без скинов использует процедурную графику Argon и встроенный шрифт Nunito. Пользовательский скин можно подключить через параметр `--skin`.
+* **pp / SR**: подсчёт pp и звёздной сложности на лету через `rosu_pp_py`; параметры `--pp` / `--sr` фиксируют эти показатели на итоговом экране (и для счетчика pp) в официальные значения osu!, сохраняя динамику графика от rosu.
+* **Сториборды**: встроенный движок сторибордов (`--storyboard`, по умолчанию отключён; работает аналогично движку std). Если отключён, вывод побайтово совпадает с оригиналом.
+* **Дополнительно**: финальный экран результатов с локальным топом рендеров (локальная база данных или глобальные топы osu! через `--leaderboard-source osu`), затемнение/размытие фона, плашки во время перерывов, хитсаунды карты/промахов/Nightcore, водяные знаки и покадровый JSON-файл со счётом (`--score-json`) для оверлей-композитора.
+
+## Использование
+
+Запуск в качестве модуля:
 
 ```
-python -m osu_taiko_renderer REPLAY.osr BEATMAP_DIR -o out.mp4 \
+python -m osu_taiko_renderer REPLAY.osr [BEATMAP_DIR] -o out.mp4 \
     [--resolution 1920x1080] [--fps 60] [--encoder auto] [--skin DIR]
+
 ```
 
-- `REPLAY.osr` — the replay file (positional).
-- `BEATMAP_DIR` — directory containing the `.osu` + audio + background (positional).
-- `-o, --output` — output path (**required**).
+* `REPLAY.osr` — файл реплея (позиционный аргумент).
+* `BEATMAP_DIR` — папка с файлом `.osu`, аудио и фоном (необязательный позиционный аргумент; ***если не указан, карта автоматически скачивается через osu.direct по MD5-хэшу из реплея***).
+* `-o, --output` — путь для сохранения видео (**обязательный**).
 
-Selected options (all verified from `osu_taiko_renderer/cli.py`):
+Основные флаги (проверено по `osu_taiko_renderer/cli.py`):
 
-| Flag | Default | Purpose |
+| Флаг | По умолчанию | Назначение |
 | --- | --- | --- |
-| `--resolution WxH` | `1920x1080` | output resolution |
-| `--fps N` | `60` | frame rate |
-| `--encoder` | `auto` | `auto \| h264_vaapi \| h264_nvenc \| libx264` |
-| `--encoder-device` | none | e.g. `/dev/dri/renderD128` |
-| `--skin DIR` / `--default-skin DIR` | none | extracted skin dir / fallback |
-| `--scroll-time MS` | `1600` | ms a 1.0×-SV note is visible (lower = faster) |
-| `--pp FLOAT` / `--sr FLOAT` | none | pin official pp / star rating on the results card |
-| `--storyboard` | off | render the map's storyboard (in-house engine) |
-| `--[no-]results`, `--[no-]pp-counter`, `--[no-]hit-counter`, `--[no-]leaderboard` | on | HUD/outro toggles |
-| `--leaderboard-source {r3d,osu}` | `r3d` | results flank-card source (`osu` reads `--leaderboard-json`) |
-| `--watermark`, `--music-volume`, `--general-volume`, `--audio-offset`, `--bg-dim-*`, `--bg-blur` | — | audio/background tuning |
+| `--resolution WxH` | `1920x1080` | Разрешение видео |
+| `--fps N` | `60` | Частота кадров |
+| `--encoder` | `auto` | Кодировщик: `auto | h264_vaapi | h264_nvenc | libx264` |
+| `--encoder-device` | нет | Устройство (например, `/dev/dri/renderD128`) |
+| `--skin DIR` / `--default-skin DIR` | нет | Папка со скином / резервный скин |
+| `--scroll-time MS` | `1600` | Время видимости ноты при скорости 1.0× (меньше = быстрее) |
+| `--pp FLOAT` / `--sr FLOAT` | нет | Фиксация официальных значений pp / звёздности на экране результатов |
+| `--storyboard` | off | Включить рендеринг сториборда |
+| `--[no-]results`, `--[no-]pp-counter`, `--[no-]hit-counter`, `--[no-]leaderboard` | on | Переключатели HUD и экрана результатов |
+| `--leaderboard-source {r3d,osu}` | `r3d` | Источник таблицы лидеров (`osu` читает `--leaderboard-json`) |
+| `--watermark`, `--music-volume`, `--general-volume`, `--audio-offset`, `--bg-dim-*`, `--bg-blur` | — | Настройки звука и фонового изображения |
 
-Boolean toggles use argparse `BooleanOptionalAction` (`--flag` / `--no-flag`). Unknown flags are accepted and ignored, so the shared render pipeline can pass mode-agnostic flags it also sends to other engines.
+Логические флаги используют argparse `BooleanOptionalAction` (`--flag` / `--no-flag`). Неизвестные флаги принимаются и игнорируются, что позволяет единому пайплайну передавать общие для всех движков параметры.
 
-Relevant environment variables: `R3D_EGL_DEVICE_INDEX` (pin the EGL/GPU device for pool isolation), `R3D_FRAME_MD5` (hash raw frames for bit-identical-output proofs).
+Переменные окружения: `R3D_EGL_DEVICE_INDEX` (выбор GPU/EGL-устройства), `R3D_FRAME_MD5` (хэширование сырых кадров для проверки точности).
 
-## Requirements
+## Требования
 
-- **Python 3.10+** (uses `X | Y` type unions and `BooleanOptionalAction`).
-- Third-party packages (imported directly; no `requirements.txt`/`pyproject.toml` is committed — deps come from the shared venv):
-  - `numpy`
-  - `Pillow` (PIL — CPU HUD compositing)
-  - `moderngl` (standalone **EGL** context / offscreen RGBA framebuffer — headless GPU)
-  - `osrparse` (replay parsing)
-  - `rosu_pp_py` (pp / star-rating; optional — features degrade if absent)
-  - `osu_renderer` — the shared R3D core package, reused for its ffmpeg encode path and `wiki_renderer.SkinPair` skinning
-- **ffmpeg** on `PATH` (the renderer owns its own ffmpeg subprocess, raw rgb24 on stdin).
+* **Python 3.10+** (используются объединения типов `X | Y` и `BooleanOptionalAction`).
+* Сторонние библиотеки (импортируются напрямую; `requirements.txt`/`pyproject.toml` отсутствуют, так как зависимости берется из общего venv):
+* `numpy`
+* `Pillow` (PIL — сборка HUD на CPU)
+* `moderngl` (контекст **EGL** / буфер кадра RGBA — headless GPU)
+* `osrparse` (парсер файлов реплеев)
+* `rosu_pp_py` (расчёт pp / сложности; опционально)
+* `osu_renderer` — общий пакет R3D Core для кодирования через ffmpeg и работу со скинами (`wiki_renderer.SkinPair`)
 
-## Layout
+
+* **ffmpeg** в системном `PATH` (рендерер запускает собственный подпроцесс ffmpeg, передавая raw rgb24 на stdin).
+
+## Структура проекта
 
 ```
 osu_taiko_renderer/
-  __main__.py, cli.py       CLI entry point (argparse) → render_taiko()
-  beatmap/                  parsing + sim models
+  __main__.py, cli.py       Точка входа CLI (argparse) → render_taiko()
+  beatmap/                  Модели парсинга и симуляции
     beatmap.py, models.py, replay.py, sliderpath.py,
     storyboard.py, score_fidelity.py, legacy_random.py
-  render/                   orchestration + GL + encode
-    render.py               parse → simulate → per-frame GL draw + HUD → ffmpeg
-    scene.py                taiko sim + per-frame scene builder
-    gl.py                   moderngl/EGL sprite batch
+  render/                   Оркестрация + GL + кодирование
+    render.py               Парсинг → симуляция → покадровый GL-рендер + HUD → ffmpeg
+    scene.py                Симуляция taiko + пошаговый билдер сцены
+    gl.py                   Пакетная отрисовка спрайтов moderngl/EGL
     effects.py, flashlight.py, dim.py, hitsounds.py,
     storyboard_engine.py, storyboard_render.py
-  argon/                    procedural Argon (lazer) HUD — compositor, hud,
-                            counter, geometry, textures, font, glyphs/
-  hud/                      HUD + results: hud.py, lazer_results.py,
+  argon/                    Процедурный HUD Argon (lazer) — композитинг, HUD,
+                            счётчики, геометрия, текстуры, шрифты, глифы
+  hud/                      HUD и финальный экран: hud.py, lazer_results.py,
                             leaderboard.py, lb_cards.py, break_overlay.py, …
-  skin/                     skin loading: taiko_skin.py, lazer_skin.py,
+  skin/                     Загрузка скинов: taiko_skin.py, lazer_skin.py,
                             assets.py, fonts.py
-  assets/                   logo, Nunito font (OFL), default nightcore hitsounds
-  fonts_data/               Torus font atlases
-tests/                      storyboard + lead-in tests
+  assets/                   Логотип, шрифт Nunito (OFL), хитсаунды Nightcore
+  fonts_data/               Атласы шрифта Torus
+tests/                      Тесты сторибордов и интро
+
 ```
 
-## License
+## Лицензия
 
-**GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later)** — see `LICENSE`. Copyright (C) 2026 Cool Adults (see `COPYRIGHT`).
+**GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later)** — см. `LICENSE`. Copyright (C) 2026 Cool Adults (см. `COPYRIGHT`).
 
-Attribution (per `COPYRIGHT`): gameplay, timing, judgment, scoring and HUD logic are behavioural ports from osu! / osu-framework by peppy / ppy (MIT); danser-go by Wieku (GPL-3.0) was studied as the behavioural reference. **No osu! game assets are bundled** — osu!'s skins/beatmaps/audio/art are CC BY-NC and are not included; this repo ships only original or procedurally-generated art. The bundled **Nunito** variable font is under the SIL Open Font License 1.1 (`assets/fonts/OFL.txt`).
+Атрибуция (согласно `COPYRIGHT`): логика геймплея, таймингов, судейства и HUD перенесена из osu! / osu-framework от peppy / ppy (MIT); проект danser-go от Wieku (GPL-3.0) использовался в качестве эталона поведения. **Игровые ресурсы osu! не входят в комплект** — скины, карты, аудио и арт из osu! распространяются под лицензией CC BY-NC; в этом репозитории используется только оригинальная или процедурно сгенерированная графика. Встроенный шрифт **Nunito** распространяется по лицензии SIL Open Font License 1.1 (`assets/fonts/OFL.txt`).
